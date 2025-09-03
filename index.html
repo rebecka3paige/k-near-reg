@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Big 10 Stadiums K-NN Demo</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <style>
+    #map { height: 90vh; width: 100vw; }
+    #controls {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: white;
+      padding: 10px;
+      border-radius: 8px;
+      z-index: 1000;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    }
+    #controls label, #controls select, #controls button {
+      margin-right: 8px;
+    }
+  </style>
+</head>
+<body>
+  <div id="controls">
+    <label for="k">k:</label>
+    <select id="k">
+      <option value="3">3</option>
+      <option value="5">5</option>
+      <option value="7">7</option>
+    </select>
+    <button id="reset">Reset</button>
+    <span id="avg"></span>
+  </div>
+  <div id="map"></div>
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script>
+    // Big 10 stadiums: name, lat, lng, capacity
+    const stadiums = [
+      { name: "Michigan Stadium", lat: 42.2658, lng: -83.7487, capacity: 107601 },
+      { name: "Beaver Stadium", lat: 40.8122, lng: -77.8568, capacity: 106572 },
+      { name: "Ohio Stadium", lat: 40.0017, lng: -83.0197, capacity: 102780 },
+      { name: "Kyle Field", lat: 30.6103, lng: -96.3451, capacity: 102733 }, // Not Big 10, but for diversity
+      { name: "Memorial Stadium (NE)", lat: 40.8206, lng: -96.7056, capacity: 85458 },
+      { name: "Camp Randall Stadium", lat: 43.0699, lng: -89.4127, capacity: 80000 },
+      { name: "Spartan Stadium", lat: 42.7277, lng: -84.4842, capacity: 75405 },
+      { name: "Kinnick Stadium", lat: 41.6589, lng: -91.5511, capacity: 69939 },
+      { name: "Ross-Ade Stadium", lat: 40.4347, lng: -86.9227, capacity: 57336 },
+      { name: "Memorial Stadium (IL)", lat: 40.1020, lng: -88.2350, capacity: 60670 },
+      { name: "SHI Stadium", lat: 40.5220, lng: -74.4580, capacity: 52254 },
+      { name: "Ryan Field", lat: 42.0659, lng: -87.6926, capacity: 47130 },
+      { name: "Maryland Stadium", lat: 38.9907, lng: -76.9456, capacity: 51802 },
+      { name: "Memorial Stadium (IN)", lat: 39.1809, lng: -86.5255, capacity: 52726 },
+      { name: "Huntington Bank Stadium", lat: 44.9760, lng: -93.2247, capacity: 50805 }
+    ];
+
+    let map = L.map('map').setView([41.5, -95], 5);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 18,
+      attribution: '© OpenStreetMap contributors'
+    }).addTo(map);
+
+    // Plot stadiums
+    const markers = [];
+    stadiums.forEach(s => {
+      const color = s.capacity > 90000 ? 'red' : s.capacity > 70000 ? 'orange' : 'blue';
+      const radius = Math.max(8, Math.sqrt(s.capacity) / 15);
+      const marker = L.circleMarker([s.lat, s.lng], {
+        radius,
+        color,
+        fillColor: color,
+        fillOpacity: 0.7
+      }).addTo(map).bindPopup(`<b>${s.name}</b><br>Capacity: ${s.capacity}`);
+      markers.push(marker);
+    });
+
+    let userMarker = null;
+    let lines = [];
+
+    function reset() {
+      if (userMarker) {
+        map.removeLayer(userMarker);
+        userMarker = null;
+      }
+      lines.forEach(l => map.removeLayer(l));
+      lines = [];
+      document.getElementById('avg').textContent = '';
+    }
+
+    function distance(lat1, lng1, lat2, lng2) {
+      // Haversine formula
+      const toRad = x => x * Math.PI / 180;
+      const R = 6371;
+      const dLat = toRad(lat2 - lat1);
+      const dLng = toRad(lng2 - lng1);
+      const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLng/2)**2;
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    }
+
+    function knn(lat, lng, k) {
+      return stadiums
+        .map(s => ({ ...s, d: distance(lat, lng, s.lat, s.lng) }))
+        .sort((a, b) => a.d - b.d)
+        .slice(0, k);
+    }
+
+    function plotUserPoint(lat, lng) {
+      reset();
+      userMarker = L.marker([lat, lng], { draggable: false }).addTo(map).bindPopup('New Stadium').openPopup();
+      const k = parseInt(document.getElementById('k').value);
+      const neighbors = knn(lat, lng, k);
+      // Draw lines
+      lines = neighbors.map(n => L.polyline([[lat, lng], [n.lat, n.lng]], { color: 'green', weight: 2 }).addTo(map));
+      // Show average
+      const avg = Math.round(neighbors.reduce((sum, n) => sum + n.capacity, 0) / k);
+      document.getElementById('avg').textContent = `Average capacity (k=${k}): ${avg}`;
+    }
+
+    map.on('click', e => {
+      plotUserPoint(e.latlng.lat, e.latlng.lng);
+    });
+
+    document.getElementById('reset').onclick = reset;
+    document.getElementById('k').onchange = function() {
+      if (userMarker) {
+        const { lat, lng } = userMarker.getLatLng();
+        plotUserPoint(lat, lng);
+      }
+    };
+  </script>
+</body>
+</html>
